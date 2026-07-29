@@ -1,0 +1,17 @@
+<svg width="16" height="16" viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg">
+  <!-- Status-bar eye icon. The status bar renders icons into a fixed ~16px
+       slot, so a full-bleed eye (no padding) fills the slot — matching the
+       footprint of the old 13px color-chip. Source is 16x16; the platform
+       tints it via IconUtil.colorize. -->
+  <path fill-rule="evenodd" clip-rule="evenodd" fill="#000000"
+        d="M8 2.5
+           C 4 2.5 1.2 6 0.5 8
+           C 1.2 10 4 13.5 8 13.5
+           C 12 13.5 14.8 10 15.5 8
+           C 14.8 6 12 2.5 8 2.5 Z
+           M8 6.1
+           C 9.2 6.1 10.2 7.1 10.2 8.3
+           C 10.2 9.5 9.2 10.5 8 10.5
+           C 6.8 10.5 5.8 9.5 5.8 8.3
+           C 5.8 7.1 6.8 6.1 8 6.1 Z"/>
+</svg>

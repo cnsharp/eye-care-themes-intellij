@@ -1,0 +1,16 @@
+<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+  <!-- Eye-care brand logo: the minimalist eye in eye-care green, with a
+       transparent pupil so it reads as an eye at small sizes. True 512x512
+       source; used as the action icon and the plugin <icon> logo. -->
+  <path fill-rule="evenodd" clip-rule="evenodd" fill="#2E9E5B"
+        d="M256 80
+           C 128 80 38.4 192 16 256
+           C 38.4 320 128 432 256 432
+           C 384 432 473.6 320 496 256
+           C 473.6 192 384 80 256 80 Z
+           M256 195.2
+           C 294.4 195.2 326.4 227.2 326.4 265.6
+           C 326.4 304 294.4 336 256 336
+           C 217.6 336 185.6 304 185.6 265.6
+           C 185.6 227.2 217.6 195.2 256 195.2 Z"/>
+</svg>

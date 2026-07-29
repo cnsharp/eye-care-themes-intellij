@@ -1,0 +1,15 @@
+{
+  "name": "Almond Yellow",
+  "dark": false,
+  "author": "cnsharp",
+  "editorScheme": "/eyecare_yellow.xml",
+  "colors": {
+    "basicBackground": "#F5F0D0",
+    "link.foreground": "#0055B3"
+  },
+  "ui": {
+    "*": {
+      "background": "basicBackground"
+    }
+  }
+}

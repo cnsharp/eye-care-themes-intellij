@@ -1,0 +1,29 @@
+<scheme name="Sky Blue" version="142" parent_scheme="Default">
+  <attributes>
+    <option name="CTRL_CLICKABLE">
+      <value>
+        <option name="FOREGROUND" value="0055b3" />
+        <option name="BACKGROUND" value="cce5e8" />
+        <option name="EFFECT_COLOR" value="0055b3" />
+        <option name="EFFECT_TYPE" value="1" />
+      </value>
+    </option>
+    <option name="HTML_CODE">
+      <value />
+    </option>
+    <option name="KOTLIN_LABEL">
+      <value />
+    </option>
+    <option name="MATCHED_BRACE_ATTRIBUTES">
+      <value>
+        <option name="BACKGROUND" value="b9d0e0" />
+        <option name="FONT_TYPE" value="1" />
+      </value>
+    </option>
+    <option name="TEXT">
+      <value>
+        <option name="BACKGROUND" value="cce5e8" />
+      </value>
+    </option>
+  </attributes>
+</scheme>

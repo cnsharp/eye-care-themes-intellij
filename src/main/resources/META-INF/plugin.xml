@@ -1,0 +1,80 @@
+<idea-plugin>
+  <id>com.cnsharp.eyecare</id>
+  <name>Eye Care Themes</name>
+  <version>1.0.0</version>
+  <vendor email="support@cnsharp.com" url="http://github.com/cnsharp/eye-care-themes">CnSharp Studio</vendor>
+
+  <!-- Plugin logo: META-INF/pluginIcon.svg is auto-detected by the Plugin
+       Manager / Marketplace (2024.3+); the explicit <icon> keeps it visible on
+       older IDEs too. -->
+  <icon>/META-INF/pluginIcon.svg</icon>
+
+  <description><![CDATA[
+  <b>Eye Care Themes</b> — a set of soft, low-glare light themes for IntelliJ-based IDEs, plus a custom color picker.
+
+  <p>
+  A collection of eye-friendly light themes (mung-bean-sand green and several other calm tints) designed for daytime use.
+  Compared with the default all-white UI, the softer background reduces glare and feels gentler on the eyes.
+  Use the status-bar switcher (or the "Eye Care Theme" action in the View menu) to switch presets or pick any custom color.
+  </p>
+
+  <p>
+  一组柔和不刺眼的亮色主题（绿豆沙绿及多种柔和色调），专为白天使用设计。
+  相比默认的全白色调，更柔和的背景能减少眩光，长时间使用更护眼、更舒适。
+  通过状态栏切换器（或 View 菜单中的“Eye Care Theme”操作）即可切换预设主题，或自定义任意颜色。
+  </p>
+    ]]></description>
+
+  <change-notes><![CDATA[
+    ]]>
+  </change-notes>
+
+  <!-- 191 = IntelliJ IDEA 2019.1: first release with StatusBarWidgetFactory,
+       which the eye-care switcher widget relies on. -->
+  <idea-version since-build="191.0"/>
+
+  <!-- please see https://www.jetbrains.org/intellij/sdk/docs/basics/getting_started/plugin_compatibility.html
+       on how to target different products -->
+  <depends>com.intellij.modules.platform</depends>
+
+  <extensions defaultExtensionNs="com.intellij">
+    <!-- Startup hook MUST live INSIDE <extensions> (not top-level): the 2026.2
+         PluginParser rejects it at top level ("Unknown element: postStartupActivity")
+         and silently skips it, so the welcome screen never gets themed at startup.
+         NOTE: the ApplicationInitializedListener EP is intentionally NOT used — on
+         2026.2 that interface requires overriding `execute()` (a suspend fun), which
+         cannot be compiled against the 2022.2 SDK we build with, and the platform
+         throws PluginException("Override execute") at startup. postStartupActivity
+         performs the same work and fires reliably (incl. the welcome screen). -->
+    <postStartupActivity implementation="com.cnsharp.intellij.EyeCareStartupActivity"/>
+
+    <!-- Add your extensions here -->
+    <themeProvider id="8b7f9bbc-547d-4f14-8bb7-5d54db73737a" path="/eyecare_green.theme.json"/>
+    <themeProvider id="cnsharp.eyecare.yellow" path="/eyecare_yellow.theme.json"/>
+    <themeProvider id="cnsharp.eyecare.pink" path="/eyecare_pink.theme.json"/>
+    <themeProvider id="cnsharp.eyecare.blue" path="/eyecare_blue.theme.json"/>
+    <themeProvider id="cnsharp.eyecare.lavender" path="/eyecare_lavender.theme.json"/>
+  </extensions>
+
+  <extensions defaultExtensionNs="com.intellij">
+    <!-- The platform instantiates and installs this widget on every status
+         bar (incl. Rider), placing it at the bottom-right via getAnchor().
+         The `id` MUST equal StatusBarWidgetFactory.getId() so the platform
+         installs the chip reliably. -->
+    <statusBarWidgetFactory id="cnsharp.eyecare.switcher.widget"
+                            implementation="com.cnsharp.intellij.EyeCareWidgetFactory"/>
+  </extensions>
+
+  <actions>
+    <!-- Searchable entry point for the switcher / custom color picker, in
+         case the status-bar chip is hidden. Appears in View menu and Find
+         Action (Ctrl/Cmd+Shift+A) -> type "Eye Care". -->
+    <action id="cnsharp.eyecare.switcher.action"
+            class="com.cnsharp.intellij.EyeCareSwitcherAction"
+            text="Eye Care Theme"
+            description="Switch eye-care theme or pick a custom color">
+      <add-to-group group-id="ViewMenu" anchor="last"/>
+    </action>
+  </actions>
+
+</idea-plugin>

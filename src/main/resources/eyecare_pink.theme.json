@@ -1,0 +1,15 @@
+{
+  "name": "Pink Sand",
+  "dark": false,
+  "author": "cnsharp",
+  "editorScheme": "/eyecare_pink.xml",
+  "colors": {
+    "basicBackground": "#F5D0C8",
+    "link.foreground": "#0055B3"
+  },
+  "ui": {
+    "*": {
+      "background": "basicBackground"
+    }
+  }
+}
