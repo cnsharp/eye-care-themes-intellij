@@ -1,0 +1,15 @@
+{
+  "name": "Lavender",
+  "dark": false,
+  "author": "cnsharp",
+  "editorScheme": "/eyecare_lavender.xml",
+  "colors": {
+    "basicBackground": "#D8D5EE",
+    "link.foreground": "#0055B3"
+  },
+  "ui": {
+    "*": {
+      "background": "basicBackground"
+    }
+  }
+}

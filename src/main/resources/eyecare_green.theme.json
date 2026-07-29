@@ -1,0 +1,15 @@
+{
+  "name": "Light Green",
+  "dark": false,
+  "author": "cnsharp",
+  "editorScheme": "/eyecare_green.xml",
+  "colors": {
+    "basicBackground": "#C7EDCC",
+    "link.foreground": "#0055B3"
+  },
+  "ui": {
+    "*": {
+      "background": "basicBackground"
+    }
+  }
+}

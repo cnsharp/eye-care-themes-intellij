@@ -1,0 +1,15 @@
+{
+  "name": "Sky Blue",
+  "dark": false,
+  "author": "cnsharp",
+  "editorScheme": "/eyecare_blue.xml",
+  "colors": {
+    "basicBackground": "#CCE5E8",
+    "link.foreground": "#0055B3"
+  },
+  "ui": {
+    "*": {
+      "background": "basicBackground"
+    }
+  }
+}
