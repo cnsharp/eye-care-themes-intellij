@@ -4,6 +4,7 @@
 
 # Build output
 build/
+.intellijPlatform/
 .gradle/
 out/
 
