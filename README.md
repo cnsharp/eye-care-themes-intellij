@@ -49,10 +49,10 @@ next time.
 
 ## Compatibility
 
-- `since-build="191"` (IntelliJ IDEA 2019.1) through `999.*` (all current and
-  future builds, including Rider 2026.x).
-- Requires only `com.intellij.modules.platform`, so it installs on the full
-  IntelliJ family.
+- `since-build="191"` (IntelliJ IDEA 2019.1) with no upper limit, so the plugin
+  installs on current and future IntelliJ-platform IDEs.
+- Requires only `com.intellij.modules.platform`, so it installs across the
+  IntelliJ family (IntelliJ IDEA, Rider, etc.).
 
 ## Building from source
 
@@ -66,8 +66,8 @@ The plugin is built with Gradle and the
 The installable plugin ZIP is produced in `build/distributions/`.
 
 > **Note:** the build targets IntelliJ Platform **2022.2** and Java **1.8**
-> bytecode so the same artifact runs on both old (2019.1+) and very new
-> (2026.x) IDEs. The Gradle `verifyPluginConfiguration` task prints two
+> bytecode so the same artifact runs on both old (2019.1+) and current/future
+> IDEs. The Gradle `verifyPluginConfiguration` task prints two
 > informational warnings about `since-build`/`sourceCompatibility`; these are
 > expected and intentional, not errors.
 
