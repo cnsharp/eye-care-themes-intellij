@@ -10,8 +10,6 @@ group = "com.cnsharp.intellij"
 version = "1.0.0"
 
 repositories {
-    // Official Maven Central repository for dependency artifacts.
-    maven { url = uri("https://repo1.maven.org/maven2/") }
     mavenCentral()
 }
 
