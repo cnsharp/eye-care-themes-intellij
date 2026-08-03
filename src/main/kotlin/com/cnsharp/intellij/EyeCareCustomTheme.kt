@@ -181,14 +181,14 @@ internal object EyeCareCustomTheme {
         "Button.endBackground",
         "Button.default.startBackground",
         "Button.default.endBackground",
-        // Data views + selection states
+        // Data views — only the row/background is tinted on purpose. The
+        // *selectionBackground keys must NOT be forced to an opaque color:
+        // that makes the selected row indistinguishable from an unselected
+        // one (it equals the row background) and is the same class of bug as
+        // the per-item menu keys above. Keep the IDE's selection color.
         "Tree.background",
         "Table.background",
         "List.background",
-        "List.selectionBackground",
-        "Tree.selectionBackground",
-        "Table.selectionBackground",
-        "Table.selectionInactiveBackground",
         // Tabs & panels
         "TabbedPane.background",
         "SplitPane.background",
@@ -196,14 +196,16 @@ internal object EyeCareCustomTheme {
         "PanelHeader.background",
         "TitlePane.background",
         "Component.header.background",
-        // Popups & menus
+        // Popups & menus — only the container chrome is tinted on purpose.
+        // The per-item *background / selectionBackground / hoverBackground keys
+        // must NOT be forced to an opaque color: doing so makes menu items
+        // opaque and breaks IntelliJ's New-UI armed/unarmed repaint, leaving
+        // the cursor's highlight stuck on every item it sweeps over. Let those
+        // keys keep their IDE defaults (selection = blue) and let items inherit
+        // the popup/menu background below.
         "PopupMenu.background",
         "Menu.background",
         "MenuBar.background",
-        "MenuItem.background",
-        "MenuItem.selectionBackground",
-        "MenuItem.hoverBackground",
-        "Menu.selectionBackground",
         // Scrollbar
         "ScrollBar.background",
         // Tooltips

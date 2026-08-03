@@ -7,7 +7,7 @@ plugins {
 }
 
 group = "com.cnsharp.intellij"
-version = "1.0.0"
+version = "1.0.1"
 
 repositories {
     mavenCentral()
@@ -36,6 +36,10 @@ intellij {
     // Rider 2026.x).
     version.set("2022.2")
     type.set("IC") // IntelliJ IDEA Community Edition; enough for a theme plugin.
+    // Don't let the 2022.2 build version clamp until-build to 222.* — leave the
+    // plugin.xml's open upper bound so the plugin installs on current and future
+    // IDEs (e.g. 2026.2 / build 262).
+    updateSinceUntilBuild.set(false)
     // No custom plugins needed: we only depend on com.intellij.modules.platform.
 }
 
