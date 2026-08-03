@@ -4,12 +4,14 @@
   "author": "cnsharp",
   "editorScheme": "/eyecare_yellow.xml",
   "colors": {
-    "basicBackground": "#F5F0D0",
+    "basicBackground": "#FAF9DE",
     "link.foreground": "#0055B3"
   },
   "ui": {
     "*": {
       "background": "basicBackground"
-    }
+    },
+    "ToolWindow.headerBackground": "basicBackground",
+    "ToolWindow.Header.background": "basicBackground"
   }
 }
