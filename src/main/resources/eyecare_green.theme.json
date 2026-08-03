@@ -10,6 +10,8 @@
   "ui": {
     "*": {
       "background": "basicBackground"
-    }
+    },
+    "ToolWindow.headerBackground": "basicBackground",
+    "ToolWindow.Header.background": "basicBackground"
   }
 }

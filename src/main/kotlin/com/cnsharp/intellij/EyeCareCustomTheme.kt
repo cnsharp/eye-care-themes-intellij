@@ -196,6 +196,9 @@ internal object EyeCareCustomTheme {
         "PanelHeader.background",
         "TitlePane.background",
         "Component.header.background",
+        // Tool window header (the title bar strip of Project / Build / Git panels)
+        "ToolWindow.headerBackground",
+        "ToolWindow.Header.background",
         // Popups & menus — only the container chrome is tinted on purpose.
         // The per-item *background / selectionBackground / hoverBackground keys
         // must NOT be forced to an opaque color: doing so makes menu items
