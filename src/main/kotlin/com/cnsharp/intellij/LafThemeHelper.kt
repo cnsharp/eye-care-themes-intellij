@@ -125,14 +125,21 @@ object LafThemeHelper {
     private val listenerInstalled = AtomicBoolean(false)
 
     /**
-     * The connection is parented to the Application (IDE lifetime) so the listener
-     * survives project open/close cycles. A per-project Disposable would unsubscribe
-     * the listener when the first project closes, and the AtomicBoolean would then
-     * prevent re-installation for every subsequent project — permanently breaking
-     * color overrides. The Application is itself disposed at IDE shutdown, so the
-     * connection is still cleaned up properly on exit.
+     * The connection is parented to the plugin's Disposable (the StartupActivity
+     * singleton), NOT to the Application. Parenting to the Application would make
+     * the listener survive a *dynamic plugin unload* — the Application is never
+     * disposed on unload, so the proxy (whose invocation handler is loaded by this
+     * plugin's class loader and captures EyeCareCustomTheme) would keep the plugin
+     * class loader alive and block clean unloading (the Plugin Verifier's
+     * "unloading may be restricted" dynamic-plugin warning).
+     *
+     * The StartupActivity is a plugin-lifetime singleton (instantiated once and
+     * reused across all projects), so parenting here still survives project
+     * open/close cycles — the original concern about a per-project Disposable
+     * does not apply — and the platform disposes it on plugin unload, which
+     * disconnects the bus connection and frees the class loader.
      */
-    fun installOverridesListener(@Suppress("UNUSED_PARAMETER") parent: Disposable) {
+    fun installOverridesListener(parent: Disposable) {
         if (!listenerInstalled.compareAndSet(false, true)) return
         try {
             val app = ApplicationManager.getApplication()
@@ -146,7 +153,7 @@ object LafThemeHelper {
                 null
             }
             val bus = app.messageBus
-            val connect = bus.javaClass.getMethod("connect", Disposable::class.java).invoke(bus, app)
+            val connect = bus.javaClass.getMethod("connect", Disposable::class.java).invoke(bus, parent)
             val topicClass = Class.forName("com.intellij.util.messages.Topic")
             val subscribe = connect.javaClass.getMethod("subscribe", topicClass, Any::class.java)
             subscribe.invoke(connect, topic, listener)
