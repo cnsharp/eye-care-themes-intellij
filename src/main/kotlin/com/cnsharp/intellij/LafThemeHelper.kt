@@ -164,7 +164,7 @@ object LafThemeHelper {
     }
 
     /** Resolve an eye-care preset's tint color by theme id (null if unknown). */
-    private fun themeColorById(themeId: String): Color? =
+    internal fun themeColorById(themeId: String): Color? =
         THEMES.firstOrNull { it.id == themeId }?.color
 
     /**
@@ -177,19 +177,20 @@ object LafThemeHelper {
     fun applyEyeCareTheme(themeId: String): Boolean {
         if (!setTheme(themeId)) return false
         val color = themeColorById(themeId) ?: return true
-        val colorHex = "#%06X".format(0xFFFFFF and color.rgb)
+        val colorHex = EyeCareCustomTheme.toHex(color)
         val app = ApplicationManager.getApplication()
-        if (app.isDispatchThread) {
+        // Chrome + editor tint + tool-window recolor; re-theme already-open windows
+        // so the change is immediate. Must run on the EDT (setCurrentUIThemeLookAndFeel /
+        // EditorColorsManager.setGlobalScheme).
+        val apply = {
             EyeCareCustomTheme.applyEditorBackground(color)
             EyeCareCustomTheme.forceWelcomeFrameBackground(colorHex)
+            // Tool-window content (Project window) caches its background and won't
+            // recolor from a repaint alone — force it to match the new preset.
+            EyeCareCustomTheme.forceToolWindowBackground(color)
             EyeCareCustomTheme.repaintAllWindows()
-        } else {
-            app.invokeLater {
-                EyeCareCustomTheme.applyEditorBackground(color)
-                EyeCareCustomTheme.forceWelcomeFrameBackground(colorHex)
-                EyeCareCustomTheme.repaintAllWindows()
-            }
         }
+        if (app.isDispatchThread) apply() else app.invokeLater(apply)
         return true
     }
 

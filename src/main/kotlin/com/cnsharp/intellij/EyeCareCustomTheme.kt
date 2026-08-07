@@ -1,7 +1,11 @@
 package com.cnsharp.intellij
 
 import com.intellij.ide.util.PropertiesComponent
+import com.intellij.openapi.project.ProjectManager
+import com.intellij.openapi.wm.ToolWindow
+import com.intellij.openapi.wm.ToolWindowManager
 import java.awt.Color
+import java.awt.Component
 import java.nio.charset.StandardCharsets
 import kotlin.Function1
 
@@ -28,6 +32,9 @@ internal object EyeCareCustomTheme {
 
     /** Forget the persisted custom color (e.g. when the user picks a preset). */
     fun clearPersistedColor() = PropertiesComponent.getInstance().unsetValue(CUSTOM_COLOR_KEY)
+
+    /** Format a Color as a `#RRGGBB` string (also used by LafThemeHelper). */
+    internal fun toHex(color: Color): String = "#%06X".format(0xFFFFFF and color.rgb)
 
     /**
      * Applies a user-chosen custom color as the eye-care theme. The color is
@@ -89,6 +96,9 @@ internal object EyeCareCustomTheme {
             // Force the welcome frame's background here, and again from the LaF-change
             // listener, to guarantee it is tinted even if it was built before our put.
             forceWelcomeFrameBackground(colorHex)
+            // Tool-window content (Project window, etc.) caches its background the
+            // same way — force it so a theme switch actually recolors the sidebar.
+            forceToolWindowBackground(color)
 
             // Re-theme any already-open windows (incl. the welcome frame) so the new
             // colors take effect immediately, not just on the next restart.
@@ -105,7 +115,7 @@ internal object EyeCareCustomTheme {
      * must NOT call SwingUtilities.updateComponentTreeUI, because rebuilding the
      * component tree of the IDE's main frame re-fires lookAndFeelChanged, which
      * re-enters this method and loops forever (pegging the CPU). This guard stops
-     * any synchronous re-entry; the `applying` guard covers the applyNow path.
+     * anysynchronous re-entry; the `applying` guard covers the applyNow path.
      */
     private var reapplying = false
 
@@ -118,12 +128,38 @@ internal object EyeCareCustomTheme {
             if (custom != null) {
                 applyUiDefaults(custom)
                 forceWelcomeFrameBackground(custom)
+                // Tool-window content caches its background (see forceWelcomeFrameBackground);
+                // re-force it so a custom-color change recolors the Project window too.
+                runCatching { Color.decode(custom) }.getOrNull()?.let { forceToolWindowBackground(it) }
             } else {
-                clearUiDefaults()
+                // NOTE: do NOT call clearUiDefaults() here. When a preset theme is
+                // applied, IntelliJ publishes its own `ui` colors into UIManager; this
+                // listener fires *during* that application and clearUiDefaults() would
+                // wipe the preset's just-published eye-care colors — leaving surfaces at
+                // the default color after every theme switch. The preset fully overwrites
+                // those keys on apply, so there is nothing of ours to clear here.
                 // A preset eye-care theme tints the editor via its bundled scheme, but
                 // the commit-message field reads the UI-theme-bound scheme and may miss
                 // the tint after a restart — re-apply it on every LaF change.
                 LafThemeHelper.reapplyPresetEditorTint()
+                // Re-publish the eye-care color while an eye-care preset is active.
+                // themeColorById returns null for non-eye-care themes (and for CUSTOM_ID,
+                // which can't be current here since the custom color was just cleared), so
+                // this block is effectively "only while an eye-care preset is active".
+                val themeId = LafThemeHelper.currentThemeId()
+                val c = if (themeId != null) LafThemeHelper.themeColorById(themeId) else null
+                if (c != null) {
+                    // A prior CUSTOM theme left a manual `UIManager.put` of ALL CHROME_KEYS
+                    // (see applyUiDefaults) — not just ToolWindow.* but also Panel.background,
+                    // ActionToolbar.background, Tree.background, Table.background, etc. The
+                    // preset's bundled theme.json does NOT reliably overwrite those manual
+                    // puts, so sub-panels inside tool windows (toolbar, file tree, commit
+                    // list…) still read the OLD custom color from UIManager. Re-publish every
+                    // CHROME_KEY so both the forced paint below AND any panel rebuilt by
+                    // updateComponentTreeUI pick up the correct eye-care color.
+                    applyUiDefaults(toHex(c))
+                    forceToolWindowBackground(c)
+                }
             }
             // Repaint only (no updateComponentTreeUI): running updateComponentTreeUI
             // from inside a LafManagerListener re-triggers lookAndFeelChanged and
@@ -133,15 +169,6 @@ internal object EyeCareCustomTheme {
             repaintWindows()
         } finally {
             reapplying = false
-        }
-    }
-
-    /** Remove our overrides so the real (non-custom) theme shows normally. */
-    private fun clearUiDefaults() {
-        try {
-            CHROME_KEYS.forEach { javax.swing.UIManager.getDefaults().remove(it) }
-        } catch (e: Throwable) {
-            LOG.warn("EyeCare: clearUiDefaults failed", e)
         }
     }
 
@@ -170,6 +197,12 @@ internal object EyeCareCustomTheme {
         "ToolBar.background",
         "Toolbar.background",
         "ActionToolbar.transparentPlaceholderBackground",
+        // New UI main toolbar + left sidebar strip — in IntelliJ's New UI the
+        // vertical icon strip (tool-window buttons) and the top frame share
+        // MainToolbar.background. Without this the sidebar never changes color.
+        "MainToolbar.background",
+        // Navigation breadcrumb bar (file-path bar below the top toolbar)
+        "NavBar.background",
         // Text inputs & editors (non-IDE-editor JTextComponents)
         "TextField.background",
         "TextArea.background",
@@ -206,16 +239,13 @@ internal object EyeCareCustomTheme {
         // Tool window header (the title bar strip of Project / Build / Git panels)
         "ToolWindow.headerBackground",
         "ToolWindow.Header.background",
-        // Popups & menus — only the container chrome is tinted on purpose.
-        // The per-item *background / selectionBackground / hoverBackground keys
-        // must NOT be forced to an opaque color: doing so makes menu items
-        // opaque and breaks IntelliJ's New-UI armed/unarmed repaint, leaving
-        // the cursor's highlight stuck on every item it sweeps over. Let those
-        // keys keep their IDE defaults (selection = blue) and let items inherit
-        // the popup/menu background below.
-        "PopupMenu.background",
-        "Menu.background",
-        "MenuBar.background",
+        // Popups & menus — do NOT tint the container background. Forcing any
+        // custom background onto popup/menu surfaces in IntelliJ's New UI makes
+        // the hover/armed highlight stick to every item the cursor sweeps over
+        // ("杂色") or leaves a trailing ghost ("拖影"). The per-item
+        // *background / selectionBackground / hoverBackground keys are already
+        // excluded; leave PopupMenu/Menu/MenuBar at their IDE defaults so menus
+        // repaint cleanly.
         // Scrollbar
         "ScrollBar.background",
         // Tooltips
@@ -263,6 +293,47 @@ internal object EyeCareCustomTheme {
         }
     }
 
+    /**
+     * The Project (and other) tool-window content panels capture their background
+     * at construction the same way the welcome frame does (see
+     * [forceWelcomeFrameBackground]): a repaint()/updateComponentTreeUI() does NOT
+     * re-read UIManager for an already-built panel, so after a theme switch the
+     * Project window keeps the OLD eye-care color until it is rebuilt — which is
+     * why "switch theme → sidebar/Project window doesn't change color". Walk every
+     * open project's tool windows and force their (and their children's) background
+     * to [targetColor].
+     *
+     * Prefer passing the explicit target color (the caller always knows it — the
+     * custom color, or the preset's `basicBackground`). That removes any reliance
+     * on UIManager holding the correct value at call time, which matters for the
+     * custom -> preset transition: the custom path's manual `UIManager.put` of the
+     * tool-window keys is not reliably overwritten by the preset's theme.json, so
+     * reading from UIManager there would repaint with the stale custom color. The
+     * preset path also re-publishes the tool-window keys into UIManager separately
+     * (see [reapplyOverrides]) so panels rebuilt by updateComponentTreeUI read right.
+     * When [targetColor] is null we fall back to UIManager.getColor, preserving the
+     * old behaviour for any caller that does not know the color.
+     */
+    fun forceToolWindowBackground(targetColor: Color? = null) {
+        try {
+            val c = targetColor ?: javax.swing.UIManager.getColor("ToolWindow.background") ?: return
+            for (project in ProjectManager.getInstance().openProjects) {
+                try {
+                    val twm = ToolWindowManager.getInstance(project)
+                    for (id in twm.toolWindowIds) {
+                        val tw: ToolWindow = twm.getToolWindow(id) ?: continue
+                        val comp = tw.component ?: continue
+                        setBackgroundDeep(comp, c)
+                    }
+                } catch (e: Throwable) {
+                    LOG.warn("EyeCare: forceToolWindowBackground failed for project ${project.name}", e)
+                }
+            }
+        } catch (e: Throwable) {
+            LOG.warn("EyeCare: forceToolWindowBackground failed", e)
+        }
+    }
+
     /** Repaint every open window so a freshly applied theme (incl. the welcome
      *  screen) re-reads UI defaults immediately. Best-effort; never throws.
      *  NOTE: this calls SwingUtilities.updateComponentTreeUI and MUST NOT be used
@@ -273,13 +344,13 @@ internal object EyeCareCustomTheme {
         try {
             val app = com.intellij.openapi.application.ApplicationManager.getApplication()
             val doRepaint = {
-                try {
-                    for (w in java.awt.Window.getWindows()) {
+                for (w in java.awt.Window.getWindows()) {
+                    try {
                         javax.swing.SwingUtilities.updateComponentTreeUI(w)
                         w.repaint()
+                    } catch (e: Throwable) {
+                        LOG.warn("EyeCare: repaintAllWindows failed for ${w.javaClass.simpleName}", e)
                     }
-                } catch (e: Throwable) {
-                    LOG.warn("EyeCare: repaintAllWindows failed", e)
                 }
             }
             if (app.isDispatchThread) doRepaint() else app.invokeLater(doRepaint)
@@ -486,14 +557,16 @@ internal object EyeCareCustomTheme {
         // and the direct UIManager.put layer can never drift apart.
         //
         // IMPORTANT: we must NOT use a "*" wildcard in the normal path, and we
-        // must NOT set a background on MenuItem/ActionMenuItem/CheckboxMenuItem.
-        // Forcing any background onto menu items breaks IntelliJ's New-UI menu
-        // repaint: an opaque item leaves the hover/armed highlight stuck ("杂色"),
-        // while a transparent one smears a trailing ghost ("拖影") as the cursor
-        // moves. So we explicitly map every CHROME_KEY (container chrome only —
-        // never the menu *items*) to basicBackground. applyUiDefaults uses the
-        // same CHROME_KEYS list via UIManager.put, ensuring both layers stay in
-        // sync. Keys not in CHROME_KEYS inherit from the "IntelliJ Light" parent.
+        // must NOT set a background on any popup/menu surface
+        // (PopupMenu/Menu/MenuBar/MenuItem/ActionMenuItem/CheckboxMenuItem).
+        // Forcing any custom background onto those surfaces breaks IntelliJ's
+        // New-UI menu repaint: an opaque item leaves the hover/armed highlight
+        // stuck ("杂色"), while a transparent one smears a trailing ghost
+        // ("拖影") as the cursor moves. So we explicitly map every CHROME_KEY
+        // (container chrome only — never menus or popups) to basicBackground.
+        // applyUiDefaults uses the same CHROME_KEYS list via UIManager.put,
+        // ensuring both layers stay in sync. Keys not in CHROME_KEYS inherit
+        // from the "IntelliJ Light" parent.
         //
         // withWildcard=true is only used in the no-parent fallback path: without
         // a parent theme to provide defaults, components outside CHROME_KEYS would
