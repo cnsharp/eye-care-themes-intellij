@@ -26,6 +26,7 @@ class EyeCareStartupActivity : StartupActivity, Disposable {
     override fun runActivity(project: Project) {
         LOG.warn("EyeCare: StartupActivity.runActivity fired (project=${project.name})")
         LafThemeHelper.installOverridesListener(this)
+        LafThemeHelper.installToolWindowListener(project, this)
         runCatching { LafThemeHelper.ensureDefaultGreenApplied() }
         runCatching { LafThemeHelper.applyPersistedCustomTheme() }
         runCatching { LafThemeHelper.reapplyPresetEditorTint() }

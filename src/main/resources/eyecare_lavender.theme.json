@@ -46,6 +46,14 @@
     "ToolWindow.headerBackground": "basicBackground",
     "ToolWindow.Header.background": "basicBackground",
     "ScrollBar.background": "basicBackground",
-    "ToolTip.background": "basicBackground"
+    "ToolTip.background": "basicBackground",
+    "Label.background": "basicBackground",
+    "RadioButton.background": "basicBackground",
+    "CheckBox.background": "basicBackground",
+    "ToggleButton.background": "basicBackground",
+    "ProgressBar.background": "basicBackground",
+    "Slider.background": "basicBackground",
+    "Spinner.background": "basicBackground",
+    "Separator.background": "basicBackground"
   }
 }

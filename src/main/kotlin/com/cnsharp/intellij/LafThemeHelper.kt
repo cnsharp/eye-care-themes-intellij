@@ -3,6 +3,7 @@ package com.cnsharp.intellij
 import com.intellij.ide.util.PropertiesComponent
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.ApplicationManager
+import com.intellij.openapi.project.Project
 import java.awt.Color
 import java.lang.reflect.Proxy
 import java.util.concurrent.atomic.AtomicBoolean
@@ -109,16 +110,14 @@ object LafThemeHelper {
 
     /**
      * Register a LafManagerListener (via the message bus TOPIC) that re-applies
-     * our color overrides — and re-LaFs all windows — on EVERY look-and-feel
-     * change. This is the ordering-proof part of the fix:
+     * our color overrides on EVERY look-and-feel change. This is the
+     * ordering-proof part of the fix:
      *
      *  - The IDE restores/applies its own startup theme AFTER our app-init hook,
      *    which would otherwise wipe the UIManager.put calls we made. The listener
      *    re-pushes them the moment that theme change fires.
      *  - setCurrentUIThemeLookAndFeel (which we call ourselves) also fires it, so
      *    our overrides are guaranteed present afterwards.
-     *  - If the user switches to a non-custom theme, we clear the overrides so the
-     *    real theme shows normally.
      *
      * Installed once; safe to call repeatedly.
      */
@@ -163,6 +162,62 @@ object LafThemeHelper {
         }
     }
 
+    /**
+     * Recolor a tool window the moment it becomes visible. Some tool windows
+     * (Database, Notifications, …) build their content lazily, so at theme-switch
+     * time their component is not constructed yet and the bulk
+     * [EyeCareCustomTheme.forceToolWindowBackground] skips them; when the user
+     * later opens them they are built with a stale/cached background. This
+     * listener recolors them on show. Only acts while an eye-care theme is active,
+     * so non-eye-care themes are left untouched. Subscribed per-project on that
+     * project's message bus (parented to the plugin Disposable like the LaF
+     * listener, so it is cleaned up on plugin unload).
+     *
+     * A delayed re-apply (~300 ms after show) catches sub-components that are
+     * constructed asynchronously or lazily after the tool window first becomes
+     * visible — e.g. notification items, git log rows, commit buttons.
+     */
+    fun installToolWindowListener(project: Project, parent: Disposable) {
+        try {
+            val listenerClass = Class.forName("com.intellij.openapi.wm.ToolWindowManagerListener")
+            val topic = listenerClass.getField("TOPIC").get(null)
+            val listener = Proxy.newProxyInstance(
+                listenerClass.classLoader,
+                arrayOf(listenerClass),
+            ) { _, method, args ->
+                if (method != null && method.name == "toolWindowShown") {
+                    val color = if (currentThemeId() in EYECARE_THEME_IDS) {
+                        currentColor()
+                    } else null
+                    if (color != null) {
+                        val tw = args?.firstOrNull() as? com.intellij.openapi.wm.ToolWindow
+                        if (tw != null) {
+                            // Immediate paint for the top-level container.
+                            EyeCareCustomTheme.forceToolWindowBackground(tw, color)
+                            // Delayed re-paint to catch lazy-loaded sub-components
+                            // (notification items, git log rows, buttons…) that
+                            // are created after the initial show event.
+                            javax.swing.Timer(300) {
+                                if (currentThemeId() in EYECARE_THEME_IDS) {
+                                    EyeCareCustomTheme.forceToolWindowBackground(tw, currentColor())
+                                }
+                            }.apply { isRepeats = false; start() }
+                        }
+                    }
+                }
+                null
+            }
+            val bus = project.messageBus
+            val connect = bus.javaClass.getMethod("connect", Disposable::class.java).invoke(bus, parent)
+            val topicClass = Class.forName("com.intellij.util.messages.Topic")
+            val subscribe = connect.javaClass.getMethod("subscribe", topicClass, Any::class.java)
+            subscribe.invoke(connect, topic, listener)
+            LOG.warn("EyeCare: ToolWindowManagerListener installed for ${project.name}")
+        } catch (e: Throwable) {
+            LOG.warn("EyeCare: installToolWindowListener failed", e)
+        }
+    }
+
     /** Resolve an eye-care preset's tint color by theme id (null if unknown). */
     internal fun themeColorById(themeId: String): Color? =
         THEMES.firstOrNull { it.id == themeId }?.color
@@ -178,19 +233,20 @@ object LafThemeHelper {
         if (!setTheme(themeId)) return false
         val color = themeColorById(themeId) ?: return true
         val colorHex = EyeCareCustomTheme.toHex(color)
-        val app = ApplicationManager.getApplication()
         // Chrome + editor tint + tool-window recolor; re-theme already-open windows
         // so the change is immediate. Must run on the EDT (setCurrentUIThemeLookAndFeel /
         // EditorColorsManager.setGlobalScheme).
         val apply = {
             EyeCareCustomTheme.applyEditorBackground(color)
-            EyeCareCustomTheme.forceWelcomeFrameBackground(colorHex)
-            // Tool-window content (Project window) caches its background and won't
-            // recolor from a repaint alone — force it to match the new preset.
-            EyeCareCustomTheme.forceToolWindowBackground(color)
+            // Re-publish the eye-care color onto every surface (UIManager defaults,
+            // welcome frame, tool windows, plus a delayed pass for lazy sub-components)
+            // before rebuilding the UI tree, so the preset color — not the stale custom
+            // one left in UIManager — is what commit buttons, git-log rows and
+            // notification items pick up.
+            EyeCareCustomTheme.applyColorToSurfaces(colorHex, color, tintWelcome = true)
             EyeCareCustomTheme.repaintAllWindows()
         }
-        if (app.isDispatchThread) apply() else app.invokeLater(apply)
+        runOnEdt(apply)
         return true
     }
 
@@ -212,11 +268,6 @@ object LafThemeHelper {
         val id = currentThemeId() ?: return
         if (id !in EYECARE_THEME_IDS) return
         val color = themeColorById(id) ?: return
-        val app = ApplicationManager.getApplication()
-        if (app.isDispatchThread) {
-            EyeCareCustomTheme.applyEditorBackground(color)
-        } else {
-            app.invokeLater { EyeCareCustomTheme.applyEditorBackground(color) }
-        }
+        runOnEdt { EyeCareCustomTheme.applyEditorBackground(color) }
     }
 }

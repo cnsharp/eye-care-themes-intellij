@@ -46,23 +46,10 @@ internal object EyeCareCustomTheme {
     fun setCustomTheme(colorHex: String): Boolean {
         val color = runCatching { Color.decode(colorHex) }.getOrNull() ?: return false
         PropertiesComponent.getInstance().setValue(CUSTOM_COLOR_KEY, colorHex)
-        val app = com.intellij.openapi.application.ApplicationManager.getApplication()
-        if (app.isDispatchThread) {
-            applyNow(colorHex, color)
-        } else {
-            app.invokeLater { applyNow(colorHex, color) }
-        }
+        runOnEdt { applyNow(colorHex, color) }
         return true
     }
 
-    /**
-     * Two layers, because the IntelliJ 2026.2 API has no single call that tints
-     * both chrome and editor:
-     *  1. Chrome (window/panel backgrounds): a transient UITheme built from the
-     *     color and applied via LafManager.setCurrentUIThemeLookAndFeel.
-     *  2. Editor background: set directly on the global EditorColorsScheme's
-     *     TEXT attribute, then re-published via EditorColorsManager.
-     */
     /**
      * Re-entrancy guard. [applyChrome] fires the LaF listener synchronously on the
      * EDT, which calls [reapplyOverrides]; [applyNow] then re-does the same UI
@@ -72,6 +59,14 @@ internal object EyeCareCustomTheme {
      */
     private var applying = false
 
+    /**
+     * Applies the color in two layers, because the IntelliJ 2026.2 API has no
+     * single call that tints both chrome and editor:
+     *  1. Chrome (window/panel backgrounds): a transient UITheme built from the
+     *     color and applied via LafManager.setCurrentUIThemeLookAndFeel.
+     *  2. Editor background: set directly on the global EditorColorsScheme's
+     *     TEXT attribute, then re-published via EditorColorsManager.
+     */
     private fun applyNow(colorHex: String, color: Color) {
         applying = true
         try {
@@ -83,22 +78,10 @@ internal object EyeCareCustomTheme {
                 .onFailure { LOG.warn("EyeCare: editor apply failed", it) }
                 .isSuccess
 
-            // The welcome screen (WelcomeScreenUIManager.getMainBackground) and other
-            // named-color consumers resolve colors through JBColor.namedColor, which
-            // reads `UIManager.getColor(name)`. A transient runtime UITheme applied
-            // via setCurrentUIThemeLookAndFeel does NOT reliably publish its colors
-            // into UIManager, so we push them directly — this is what actually tints
-            // the welcome screen (and keeps it from falling back to the dark default).
-            applyUiDefaults(colorHex)
-
-            // FlatWelcomeFrame reads WelcomeScreen.background ONCE at construction and
-            // stores it as a fixed Color, so a plain repaint() won't re-read UIManager.
-            // Force the welcome frame's background here, and again from the LaF-change
-            // listener, to guarantee it is tinted even if it was built before our put.
-            forceWelcomeFrameBackground(colorHex)
-            // Tool-window content (Project window, etc.) caches its background the
-            // same way — force it so a theme switch actually recolors the sidebar.
-            forceToolWindowBackground(color)
+            // Paint the color onto every eye-care surface — UIManager defaults, the
+            // welcome frame, tool-window content, and a delayed pass for lazily built
+            // sub-components. The "why" for each layer lives in applyColorToSurfaces.
+            applyColorToSurfaces(colorHex, color, tintWelcome = true)
 
             // Re-theme any already-open windows (incl. the welcome frame) so the new
             // colors take effect immediately, not just on the next restart.
@@ -115,50 +98,62 @@ internal object EyeCareCustomTheme {
      * must NOT call SwingUtilities.updateComponentTreeUI, because rebuilding the
      * component tree of the IDE's main frame re-fires lookAndFeelChanged, which
      * re-enters this method and loops forever (pegging the CPU). This guard stops
-     * anysynchronous re-entry; the `applying` guard covers the applyNow path.
+     * asynchronous re-entry; the `applying` guard covers the applyNow path.
      */
     private var reapplying = false
 
-    /** Re-apply or clear our overrides in response to a look-and-feel change. */
+    /**
+     * Push [colorHex]/[color] onto every eye-care surface: UIManager defaults,
+     * the welcome frame (when [tintWelcome]), tool-window content, and the
+     * delayed second pass that catches lazily-built sub-components. Shared by the
+     * custom, preset and re-apply paths so the surface-painting logic lives in
+     * one place and can never drift between them.
+     */
+    internal fun applyColorToSurfaces(colorHex: String, color: Color, tintWelcome: Boolean) {
+        applyUiDefaults(colorHex)
+        if (tintWelcome) forceWelcomeFrameBackground(colorHex)
+        forceToolWindowBackground(color)
+        scheduleDelayedToolWindowRecolor(color)
+    }
+
+    /** Re-apply our overrides in response to a look-and-feel change. */
     fun reapplyOverrides() {
         if (applying || reapplying) return
         reapplying = true
         try {
             val custom = customColor()
             if (custom != null) {
-                applyUiDefaults(custom)
-                forceWelcomeFrameBackground(custom)
                 // Tool-window content caches its background (see forceWelcomeFrameBackground);
                 // re-force it so a custom-color change recolors the Project window too.
-                runCatching { Color.decode(custom) }.getOrNull()?.let { forceToolWindowBackground(it) }
+                val cc = runCatching { Color.decode(custom) }.getOrNull()
+                if (cc != null) {
+                    applyColorToSurfaces(custom, cc, tintWelcome = true)
+                }
             } else {
-                // NOTE: do NOT call clearUiDefaults() here. When a preset theme is
-                // applied, IntelliJ publishes its own `ui` colors into UIManager; this
-                // listener fires *during* that application and clearUiDefaults() would
-                // wipe the preset's just-published eye-care colors — leaving surfaces at
-                // the default color after every theme switch. The preset fully overwrites
+                // NOTE: do NOT clear our UIManager overrides here. When a preset theme
+                // is applied, IntelliJ publishes its own `ui` colors into UIManager; this
+                // listener fires *during* that application, so clearing ours would wipe
+                // the preset's just-published eye-care colors — leaving surfaces at the
+                // default color after every theme switch. The preset fully overwrites
                 // those keys on apply, so there is nothing of ours to clear here.
                 // A preset eye-care theme tints the editor via its bundled scheme, but
                 // the commit-message field reads the UI-theme-bound scheme and may miss
                 // the tint after a restart — re-apply it on every LaF change.
                 LafThemeHelper.reapplyPresetEditorTint()
-                // Re-publish the eye-care color while an eye-care preset is active.
-                // themeColorById returns null for non-eye-care themes (and for CUSTOM_ID,
-                // which can't be current here since the custom color was just cleared), so
-                // this block is effectively "only while an eye-care preset is active".
+                // Re-publish the eye-care color while an eye-care theme is active.
+                // The listener can fire before LafManager has fully published the new
+                // current theme, so themeColorById(currentThemeId()) may return null
+                // (especially when the id is still reported as CUSTOM_ID during a
+                // custom→preset switch). Resolve the color via currentColor() whenever
+                // the current id belongs to the eye-care family.
                 val themeId = LafThemeHelper.currentThemeId()
-                val c = if (themeId != null) LafThemeHelper.themeColorById(themeId) else null
-                if (c != null) {
+                if (themeId in EYECARE_THEME_IDS) {
+                    val c = currentColor()
                     // A prior CUSTOM theme left a manual `UIManager.put` of ALL CHROME_KEYS
-                    // (see applyUiDefaults) — not just ToolWindow.* but also Panel.background,
-                    // ActionToolbar.background, Tree.background, Table.background, etc. The
-                    // preset's bundled theme.json does NOT reliably overwrite those manual
-                    // puts, so sub-panels inside tool windows (toolbar, file tree, commit
-                    // list…) still read the OLD custom color from UIManager. Re-publish every
-                    // CHROME_KEY so both the forced paint below AND any panel rebuilt by
-                    // updateComponentTreeUI pick up the correct eye-care color.
-                    applyUiDefaults(toHex(c))
-                    forceToolWindowBackground(c)
+                    // that the preset's bundled theme.json does not reliably overwrite, so
+                    // sub-panels inside tool windows still read the OLD custom color. Re-publish
+                    // every CHROME_KEY (see applyUiDefaults) so they pick up the correct color.
+                    applyColorToSurfaces(toHex(c), c, tintWelcome = false)
                 }
             }
             // Repaint only (no updateComponentTreeUI): running updateComponentTreeUI
@@ -172,14 +167,6 @@ internal object EyeCareCustomTheme {
         }
     }
 
-    /**
-     * Push our colors directly into UIManager. JBColor.namedColor (used by the
-     * welcome screen via WelcomeScreenUIManager.getMainBackground) resolves
-     * named colors through `UIManager.getColor`, which a transient runtime
-     * UITheme applied via setCurrentUIThemeLookAndFeel does NOT reliably
-     * publish — so we set them explicitly. This is what actually tints the
-     * welcome screen instead of letting it fall back to the dark default.
-     */
     /** All UIManager color keys we override so every UI surface gets the eye-care tint. */
     private val CHROME_KEYS = listOf(
         // Welcome screen
@@ -239,6 +226,18 @@ internal object EyeCareCustomTheme {
         // Tool window header (the title bar strip of Project / Build / Git panels)
         "ToolWindow.headerBackground",
         "ToolWindow.Header.background",
+        // Labels & form controls — covers notification item text areas,
+        // settings labels, checkboxes/radio-buttons inside tool windows.
+        "Label.background",
+        "RadioButton.background",
+        "CheckBox.background",
+        "ToggleButton.background",
+        // Progress / slider / spinner bars inside tool windows
+        "ProgressBar.background",
+        "Slider.background",
+        "Spinner.background",
+        // Separator lines
+        "Separator.background",
         // Popups & menus — do NOT tint the container background. Forcing any
         // custom background onto popup/menu surfaces in IntelliJ's New UI makes
         // the hover/armed highlight stick to every item the cursor sweeps over
@@ -252,10 +251,41 @@ internal object EyeCareCustomTheme {
         "ToolTip.background",
     )
 
-    private fun applyUiDefaults(colorHex: String) {
+    /**
+     * Re-force the tool-window background shortly after a theme switch. Some
+     * sub-components (notification items, git-log rows, commit buttons…) are
+     * built lazily — after the immediate force pass and even after
+     * updateComponentTreeUI — so a second pass ~300 ms later catches them. Used
+     * for already-visible tool windows (toolWindowShown won't re-fire for them),
+     * e.g. the preset → custom → preset round-trip.
+     */
+    internal fun scheduleDelayedToolWindowRecolor(color: Color) {
+        try {
+            javax.swing.Timer(300) {
+                if (!applying && !reapplying) forceToolWindowBackground(color)
+            }.apply { isRepeats = false; start() }
+        } catch (_: Throwable) {
+        }
+    }
+
+    /**
+     * Push our colors directly into UIManager. JBColor.namedColor (used by the
+     * welcome screen via WelcomeScreenUIManager.getMainBackground) resolves
+     * named colors through `UIManager.getColor`, which a transient runtime
+     * UITheme applied via setCurrentUIThemeLookAndFeel does NOT reliably
+     * publish — so we set them explicitly. This is what actually tints the
+     * welcome screen instead of letting it fall back to the dark default.
+     */
+    internal fun applyUiDefaults(colorHex: String) {
         try {
             val c = Color.decode(colorHex)
             CHROME_KEYS.forEach { javax.swing.UIManager.put(it, c) }
+            // basicBackground is the root color referenced by most `ui` keys in
+            // both the preset theme.json and our transient custom theme. After a
+            // custom -> preset round-trip the preset's basicBackground is not
+            // always re-published by IntelliJ, so panels that resolve
+            // basicBackground directly keep the stale custom color. Force it too.
+            javax.swing.UIManager.put("basicBackground", c)
         } catch (e: Throwable) {
             LOG.warn("EyeCare: applyUiDefaults failed", e)
         }
@@ -334,15 +364,26 @@ internal object EyeCareCustomTheme {
         }
     }
 
+    /** Recolor a single tool window's content (used when it becomes visible, to
+     *  catch lazily-built panels such as Database/Notifications that are not
+     *  present at theme-switch time and so are skipped by the bulk call above). */
+    fun forceToolWindowBackground(tw: ToolWindow, targetColor: Color? = null) {
+        try {
+            val c = targetColor ?: javax.swing.UIManager.getColor("ToolWindow.background") ?: return
+            val comp = tw.component ?: return
+            setBackgroundDeep(comp, c)
+        } catch (_: Throwable) {
+        }
+    }
+
     /** Repaint every open window so a freshly applied theme (incl. the welcome
      *  screen) re-reads UI defaults immediately. Best-effort; never throws.
      *  NOTE: this calls SwingUtilities.updateComponentTreeUI and MUST NOT be used
      *  from the LafManagerListener (reapplyOverrides) — it re-fires
      *  lookAndFeelChanged and loops forever. It is only for the explicit,
-     *  one-shot applyNow path, which is guarded by [applying]. */
+     *  one-shot apply paths (applyNow / applyEyeCareTheme), guarded by [applying]. */
     fun repaintAllWindows() {
         try {
-            val app = com.intellij.openapi.application.ApplicationManager.getApplication()
             val doRepaint = {
                 for (w in java.awt.Window.getWindows()) {
                     try {
@@ -353,7 +394,7 @@ internal object EyeCareCustomTheme {
                     }
                 }
             }
-            if (app.isDispatchThread) doRepaint() else app.invokeLater(doRepaint)
+            runOnEdt(doRepaint)
         } catch (e: Throwable) {
             LOG.warn("EyeCare: repaintAllWindows scheduling failed", e)
         }
@@ -366,7 +407,6 @@ internal object EyeCareCustomTheme {
      */
     private fun repaintWindows() {
         try {
-            val app = com.intellij.openapi.application.ApplicationManager.getApplication()
             val doRepaint = {
                 try {
                     for (w in java.awt.Window.getWindows()) w.repaint()
@@ -374,7 +414,7 @@ internal object EyeCareCustomTheme {
                     LOG.warn("EyeCare: repaintWindows failed", e)
                 }
             }
-            if (app.isDispatchThread) doRepaint() else app.invokeLater(doRepaint)
+            runOnEdt(doRepaint)
         } catch (e: Throwable) {
             LOG.warn("EyeCare: repaintWindows scheduling failed", e)
         }
