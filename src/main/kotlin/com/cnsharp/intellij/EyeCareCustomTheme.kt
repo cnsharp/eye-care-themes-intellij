@@ -475,9 +475,22 @@ internal object EyeCareCustomTheme {
         // No "id" in the JSON: IntelliJ derives the theme id from the `name`
         // argument passed to loadFromJsonWithParent (here CUSTOM_ID).
         // Chrome only — the editor background is set via applyEditorBackground.
-        // Derive the color map from CHROME_KEYS so the transient UITheme JSON and
-        // the direct UIManager.put layer can never drift apart.
-        val colorLines = CHROME_KEYS.joinToString(",\n") { "    \"${jsonString(it)}\": \"$hex\"" }
+        // Derive the UI color map from CHROME_KEYS so the transient UITheme JSON
+        // and the direct UIManager.put layer can never drift apart.
+        //
+        // IMPORTANT: we must NOT use a "*" wildcard here, and we must NOT set a
+        // background on MenuItem/ActionMenuItem/CheckboxMenuItem. Forcing any
+        // background onto menu items breaks IntelliJ's New-UI menu repaint: an
+        // opaque item leaves the hover/armed highlight stuck ("杂色"), while a
+        // transparent one smears a trailing ghost ("拖影") as the cursor moves.
+        // So instead of "*" we explicitly map every CHROME_KEY (container chrome
+        // only — never the menu *items*) to basicBackground. The full background
+        // coverage that "*" used to provide for the custom color is carried by
+        // the UIManager.put layer in applyUiDefaults, which uses the very same
+        // CHROME_KEYS list and also deliberately excludes menu items. Keys we
+        // don't map here simply inherit the light "IntelliJ Light" parent
+        // defaults (never black), so nothing else regresses.
+        val uiLines = CHROME_KEYS.joinToString(",\n") { "    \"${jsonString(it)}\": \"basicBackground\"" }
         return """
         {
           "name": "${jsonString(EyeCareBundle.message("custom.theme.name"))}",
@@ -485,10 +498,11 @@ internal object EyeCareCustomTheme {
           "author": "cnsharp",
           $parentLine
           "colors": {
-            "basicBackground": "$hex",
-            $colorLines
+            "basicBackground": "$hex"
           },
-          "ui": { "*": { "background": "basicBackground" } }
+          "ui": {
+            $uiLines
+          }
         }
         """.trimIndent()
     }
