@@ -189,6 +189,10 @@ internal object EyeCareCustomTheme {
         "Tree.background",
         "Table.background",
         "List.background",
+        // Scroll containers — tint the viewport so the empty area below a
+        // short list/tree does not show a white gap against the tinted panel.
+        "ScrollPane.background",
+        "Viewport.background",
         // Tabs & panels
         "TabbedPane.background",
         "SplitPane.background",
@@ -196,6 +200,9 @@ internal object EyeCareCustomTheme {
         "PanelHeader.background",
         "TitlePane.background",
         "Component.header.background",
+        // Tool window content area (Project/Terminal/Build panel body)
+        "ToolWindow.background",
+        "SidePanel.background",
         // Tool window header (the title bar strip of Project / Build / Git panels)
         "ToolWindow.headerBackground",
         "ToolWindow.Header.background",
@@ -357,7 +364,7 @@ internal object EyeCareCustomTheme {
             // retry without a parent. The explicit WelcomeScreen.* keys in the
             // JSON still prevent a black welcome screen.
             LOG.warn("EyeCare: themed load with parent failed, retrying without parent", e)
-            val json2 = buildJson(colorHex, withParent = false).toByteArray(StandardCharsets.UTF_8)
+            val json2 = buildJson(colorHex, withParent = false, withWildcard = true).toByteArray(StandardCharsets.UTF_8)
             load.invoke(companion, json2, CUSTOM_ID, loader, parentResolver)
         } ?: throw IllegalStateException("loadFromJsonWithParent returned null")
         uiThemeClass.getMethod("setProviderClassLoader", ClassLoader::class.java).invoke(theme, loader)
@@ -456,7 +463,7 @@ internal object EyeCareCustomTheme {
         }
     }
 
-    private fun buildJson(colorHex: String, withParent: Boolean = true): String {
+    private fun buildJson(colorHex: String, withParent: Boolean = true, withWildcard: Boolean = false): String {
         // Normalize/validate before interpolation: an unescaped quote or backslash
         // from a tampered PropertiesComponent value would produce invalid JSON and
         // silently break theme loading. Fall back to the default green on bad input.
@@ -478,19 +485,23 @@ internal object EyeCareCustomTheme {
         // Derive the UI color map from CHROME_KEYS so the transient UITheme JSON
         // and the direct UIManager.put layer can never drift apart.
         //
-        // IMPORTANT: we must NOT use a "*" wildcard here, and we must NOT set a
-        // background on MenuItem/ActionMenuItem/CheckboxMenuItem. Forcing any
-        // background onto menu items breaks IntelliJ's New-UI menu repaint: an
-        // opaque item leaves the hover/armed highlight stuck ("杂色"), while a
-        // transparent one smears a trailing ghost ("拖影") as the cursor moves.
-        // So instead of "*" we explicitly map every CHROME_KEY (container chrome
-        // only — never the menu *items*) to basicBackground. The full background
-        // coverage that "*" used to provide for the custom color is carried by
-        // the UIManager.put layer in applyUiDefaults, which uses the very same
-        // CHROME_KEYS list and also deliberately excludes menu items. Keys we
-        // don't map here simply inherit the light "IntelliJ Light" parent
-        // defaults (never black), so nothing else regresses.
-        val uiLines = CHROME_KEYS.joinToString(",\n") { "    \"${jsonString(it)}\": \"basicBackground\"" }
+        // IMPORTANT: we must NOT use a "*" wildcard in the normal path, and we
+        // must NOT set a background on MenuItem/ActionMenuItem/CheckboxMenuItem.
+        // Forcing any background onto menu items breaks IntelliJ's New-UI menu
+        // repaint: an opaque item leaves the hover/armed highlight stuck ("杂色"),
+        // while a transparent one smears a trailing ghost ("拖影") as the cursor
+        // moves. So we explicitly map every CHROME_KEY (container chrome only —
+        // never the menu *items*) to basicBackground. applyUiDefaults uses the
+        // same CHROME_KEYS list via UIManager.put, ensuring both layers stay in
+        // sync. Keys not in CHROME_KEYS inherit from the "IntelliJ Light" parent.
+        //
+        // withWildcard=true is only used in the no-parent fallback path: without
+        // a parent theme to provide defaults, components outside CHROME_KEYS would
+        // fall back to JVM/OS defaults (potentially black on Linux/GTK). The
+        // wildcard covers those surfaces; the menu repaint issue is acceptable in
+        // this already-degraded state.
+        val uiLines = CHROME_KEYS.joinToString(",\n            ") { "\"${jsonString(it)}\": \"basicBackground\"" }
+        val wildcardLine = if (withWildcard) "\"*\": { \"background\": \"basicBackground\" },\n            " else ""
         return """
         {
           "name": "${jsonString(EyeCareBundle.message("custom.theme.name"))}",
@@ -501,7 +512,7 @@ internal object EyeCareCustomTheme {
             "basicBackground": "$hex"
           },
           "ui": {
-            $uiLines
+            $wildcardLine$uiLines
           }
         }
         """.trimIndent()

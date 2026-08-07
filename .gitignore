@@ -16,3 +16,6 @@ out/
 
 # Tooling
 .claude/
+
+# Docs
+docs/
