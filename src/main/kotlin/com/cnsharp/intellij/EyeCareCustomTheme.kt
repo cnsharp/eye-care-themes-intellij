@@ -46,6 +46,9 @@ internal object EyeCareCustomTheme {
     fun setCustomTheme(colorHex: String): Boolean {
         val color = runCatching { Color.decode(colorHex) }.getOrNull() ?: return false
         PropertiesComponent.getInstance().setValue(CUSTOM_COLOR_KEY, colorHex)
+        // An explicit custom-color pick counts as the user's choice: stop the
+        // first-run default from re-applying green over it on a later start.
+        PropertiesComponent.getInstance().setValue(LafThemeHelper.DEFAULT_APPLIED_KEY, true)
         runOnEdt { applyNow(colorHex, color) }
         return true
     }

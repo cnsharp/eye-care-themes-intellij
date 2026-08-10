@@ -86,24 +86,31 @@ object LafThemeHelper {
         return false
     }
 
-    private const val DEFAULT_APPLIED_KEY = "eyecare.default.applied"
+    internal const val DEFAULT_APPLIED_KEY = "eyecare.default.applied"
 
     /**
      * On first activation, default the IDE to the green eye-care theme so a fresh
      * install shows green immediately. Once applied — or if the user has already
-     * chosen an eye-care theme or a custom color — this is a no-op, so the user's
-     * later choice is always respected (we never force green on top of it).
+     * made an explicit choice (a preset via the switcher, or a custom color) — the
+     * [DEFAULT_APPLIED_KEY] flag is set and this becomes a no-op, so the user's
+     * later choice is always respected.
+     *
+     * Crucially, we do NOT bail out just because an eye-care theme is already active
+     * (older logic did, and that let the platform's own first-run theme selection —
+     * which can land on Lavender, the alphabetically-first preset in the theme
+     * picker — persist as the "default" instead of green). On a first run we always
+     * push green unless a custom color is persisted (in which case that wins).
      */
     fun ensureDefaultGreenApplied() {
         val pc = PropertiesComponent.getInstance()
         if (pc.getBoolean(DEFAULT_APPLIED_KEY)) return
-        val id = currentThemeId()
-        if (id in EYECARE_THEME_IDS || EyeCareCustomTheme.customColor() != null) {
+        // A persisted custom color beats the green default, but we still mark the
+        // default as applied so we never re-apply green over the user's color.
+        if (EyeCareCustomTheme.customColor() != null) {
             pc.setValue(DEFAULT_APPLIED_KEY, true)
             return
         }
         if (applyEyeCareTheme(GREEN_ID)) {
-            pc.setValue(DEFAULT_APPLIED_KEY, true)
             LOG.warn("EyeCare: defaulted to green theme on first run")
         }
     }
@@ -231,6 +238,9 @@ object LafThemeHelper {
      */
     fun applyEyeCareTheme(themeId: String): Boolean {
         if (!setTheme(themeId)) return false
+        // An explicit preset selection counts as the user's choice: stop the
+        // first-run default from ever re-applying green over it on a later start.
+        PropertiesComponent.getInstance().setValue(DEFAULT_APPLIED_KEY, true)
         val color = themeColorById(themeId) ?: return true
         val colorHex = EyeCareCustomTheme.toHex(color)
         // Chrome + editor tint + tool-window recolor; re-theme already-open windows
