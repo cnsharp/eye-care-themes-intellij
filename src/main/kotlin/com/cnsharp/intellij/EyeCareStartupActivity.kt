@@ -1,6 +1,6 @@
 package com.cnsharp.intellij
 
-import com.intellij.openapi.Disposable
+import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.startup.StartupActivity
 
@@ -17,24 +17,23 @@ import com.intellij.openapi.startup.StartupActivity
  * compiled against the 2022.2 SDK we build with, and the platform throws
  * PluginException("Override execute") at startup.
  *
- * Implements [Disposable] so the LaF listener connection (parented to this
- * instance in [runActivity]) is unsubscribed when the plugin is unloaded —
- * otherwise a dynamic reload would leak the listener and its references to this
- * plugin's classes.
+ * The message-bus connections this installs are parented to the plugin's own
+ * light services ([EyeCarePluginDisposable] for the app-level LaF listener,
+ * [EyeCareProjectDisposable] for the per-project tool-window listener), NOT to
+ * this activity. Those services sit under the plugin's Disposer subtree, so the
+ * platform disposes them — and therefore unsubscribes the connections — on
+ * plugin unload, which frees the class loader. Parenting to the activity itself
+ * would make it a permanent Disposer root and block clean dynamic unload.
  */
-class EyeCareStartupActivity : StartupActivity, Disposable {
+class EyeCareStartupActivity : StartupActivity {
     override fun runActivity(project: Project) {
         LOG.warn("EyeCare: StartupActivity.runActivity fired (project=${project.name})")
-        LafThemeHelper.installOverridesListener(this)
-        LafThemeHelper.installToolWindowListener(project, this)
+        val appParent = ApplicationManager.getApplication().getService(EyeCarePluginDisposable::class.java)
+        LafThemeHelper.installOverridesListener(appParent)
+        val projectParent = project.getService(EyeCareProjectDisposable::class.java)
+        LafThemeHelper.installToolWindowListener(project, projectParent)
         runCatching { LafThemeHelper.ensureDefaultGreenApplied() }
         runCatching { LafThemeHelper.applyPersistedCustomTheme() }
         runCatching { LafThemeHelper.reapplyPresetEditorTint() }
-    }
-
-    override fun dispose() {
-        // The LafManagerListener connection is parented to this disposable, so it
-        // is unsubscribed automatically when the plugin is unloaded. Nothing else
-        // to release here.
     }
 }

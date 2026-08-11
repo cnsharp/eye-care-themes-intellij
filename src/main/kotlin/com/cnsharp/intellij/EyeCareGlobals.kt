@@ -23,3 +23,27 @@ internal fun runOnEdt(action: () -> Unit) {
     val app = ApplicationManager.getApplication()
     if (app.isDispatchThread) action() else app.invokeLater(action)
 }
+
+/**
+ * Run [block] on the EDT and return its result synchronously. If already on the
+ * EDT, runs inline; otherwise uses [ApplicationManager.getApplication].invokeAndWait
+ * so the caller gets the result back. Needed because LaF switches
+ * (setCurrentUIThemeLookAndFeel) are EDT-only, but [applyEyeCareTheme] can be
+ * reached from a background startup thread (a non-DumbAware postStartupActivity).
+ */
+internal inline fun <T> runOnEdtSync(crossinline block: () -> T): T {
+    val app = ApplicationManager.getApplication()
+    if (app.isDispatchThread) return block()
+    var result: T? = null
+    var error: Throwable? = null
+    app.invokeAndWait {
+        try {
+            result = block()
+        } catch (t: Throwable) {
+            error = t
+        }
+    }
+    error?.let { throw it }
+    @Suppress("UNCHECKED_CAST")
+    return result as T
+}

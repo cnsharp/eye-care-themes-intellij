@@ -1,7 +1,7 @@
 <idea-plugin>
   <id>com.cnsharp.eyecare</id>
   <name>Eye Care Themes</name>
-  <version>1.0.2</version>
+  <version>1.0.3</version>
   <vendor email="support@cnsharp.com" url="http://github.com/cnsharp/eye-care-themes">CnSharp Studio</vendor>
 
   <!-- Plugin logo: META-INF/pluginIcon.svg is auto-detected by the Plugin
@@ -47,6 +47,16 @@
          throws PluginException("Override execute") at startup. postStartupActivity
          performs the same work and fires reliably (incl. the welcome screen). -->
     <postStartupActivity implementation="com.cnsharp.intellij.EyeCareStartupActivity"/>
+
+    <!-- Light services used as the parent Disposable for message-bus connections
+         installed by EyeCareStartupActivity. Parenting to a plugin/service
+         Disposable (instead of the activity or the Application) puts the
+         connection under the plugin's Disposer subtree, so the platform
+         disconnects it on plugin unload and frees the class loader — avoiding the
+         dynamic-unload leak. EyeCarePluginDisposable is app-scoped (LaF listener),
+         EyeCareProjectDisposable is project-scoped (tool-window listener). -->
+    <applicationService serviceImplementation="com.cnsharp.intellij.EyeCarePluginDisposable"/>
+    <projectService serviceImplementation="com.cnsharp.intellij.EyeCareProjectDisposable"/>
 
     <!-- Add your extensions here -->
     <themeProvider id="8b7f9bbc-547d-4f14-8bb7-5d54db73737a" path="/eyecare_green.theme.json"/>

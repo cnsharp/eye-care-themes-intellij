@@ -131,19 +131,19 @@ object LafThemeHelper {
     private val listenerInstalled = AtomicBoolean(false)
 
     /**
-     * The connection is parented to the plugin's Disposable (the StartupActivity
-     * singleton), NOT to the Application. Parenting to the Application would make
-     * the listener survive a *dynamic plugin unload* — the Application is never
-     * disposed on unload, so the proxy (whose invocation handler is loaded by this
-     * plugin's class loader and captures EyeCareCustomTheme) would keep the plugin
-     * class loader alive and block clean unloading (the Plugin Verifier's
-     * "unloading may be restricted" dynamic-plugin warning).
+     * The connection is parented to the plugin's app-level light service
+     * ([EyeCarePluginDisposable]), NOT to the Application directly. Parenting to
+     * the Application would make the listener survive a *dynamic plugin unload* —
+     * the Application is never disposed on unload, so the proxy (whose invocation
+     * handler is loaded by this plugin's class loader and captures
+     * EyeCareCustomTheme) would keep the plugin class loader alive and block clean
+     * unloading (the Plugin Verifier's "unloading may be restricted" dynamic-plugin
+     * warning).
      *
-     * The StartupActivity is a plugin-lifetime singleton (instantiated once and
-     * reused across all projects), so parenting here still survives project
-     * open/close cycles — the original concern about a per-project Disposable
-     * does not apply — and the platform disposes it on plugin unload, which
-     * disconnects the bus connection and frees the class loader.
+     * The app service is a plugin-lifetime singleton (instantiated once and reused
+     * across all projects), and the platform disposes it on plugin unload, which
+     * disconnects the bus connection and frees the class loader. It also survives
+     * project open/close cycles, so the per-project concern does not apply.
      */
     fun installOverridesListener(parent: Disposable) {
         if (!listenerInstalled.compareAndSet(false, true)) return
@@ -178,7 +178,10 @@ object LafThemeHelper {
      * listener recolors them on show. Only acts while an eye-care theme is active,
      * so non-eye-care themes are left untouched. Subscribed per-project on that
      * project's message bus (parented to the plugin Disposable like the LaF
-     * listener, so it is cleaned up on plugin unload).
+     * listener, so it is cleaned up on plugin unload). The [parent] supplied by
+     * the caller is the per-project [EyeCareProjectDisposable] service, which the
+     * platform disposes on project close / plugin unload, so the connection does
+     * not outlive the project it is bound to.
      *
      * A delayed re-apply (~300 ms after show) catches sub-components that are
      * constructed asynchronously or lazily after the tool window first becomes
@@ -237,7 +240,12 @@ object LafThemeHelper {
      * EditorColorsManager.setGlobalScheme must run there.
      */
     fun applyEyeCareTheme(themeId: String): Boolean {
-        if (!setTheme(themeId)) return false
+        // setCurrentUIThemeLookAndFeel is EDT-only. runActivity (a non-DumbAware
+        // postStartupActivity) and other callers may invoke us off-EDT, so switch
+        // synchronously on the EDT first; otherwise the switch throws / no-ops and
+        // the default-green-on-startup never takes effect (while the manual
+        // switcher, which runs on the EDT, still works).
+        if (!runOnEdtSync { setTheme(themeId) }) return false
         // An explicit preset selection counts as the user's choice: stop the
         // first-run default from ever re-applying green over it on a later start.
         PropertiesComponent.getInstance().setValue(DEFAULT_APPLIED_KEY, true)
